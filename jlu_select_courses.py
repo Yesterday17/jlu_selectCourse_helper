@@ -31,6 +31,9 @@ num_of_threads = 5
 
 allowed_timeout = 1
 
+# If the course is full, judge whether to exit the thread.
+full_course_exit = True
+
 # -----------------------   Attention!!!   -----------------------
 #
 # The course_id is not the one which provided by "教学班".
@@ -42,7 +45,11 @@ allowed_timeout = 1
 
 course_id = ['']
 
-url_prefix = 'http://uims.jlu.edu.cn/ntms/'
+# To make it more stable, wired network is required.
+# 10.60.65.6 - 10.60.65.8 are all available,
+# But usually 10.60.65.8 is unaccessable due to DNS.
+
+url_prefix = 'http://10.60.65.6/ntms/'
 uims_opener = request.build_opener(
     request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 uims_opener.open(url_prefix + 'j_spring_security_check', parse.urlencode(
@@ -152,6 +159,16 @@ def check_state(data):
         return ret
 
 
+def check_msg(data):
+    try:
+        j = json.loads(data)
+        ret = j['msg']
+    except:
+        raise json_exp()
+    finally:
+        return ret
+
+
 def thread(i):
     print('Course ' + i + ' is selecting ...')
     while True:
@@ -159,8 +176,16 @@ def thread(i):
             ret = send_packet('{"lsltId":"%s","opType":"Y"}' % (i), url_prefix +
                               'action/select/select-lesson.do').read().decode()
             if check_state(ret) == 1410:
-                print('Course ' + i + ' has been successfully selected!')
+                print('Course ' + i + ' been successfully selected!')
                 return
+            elif check_state(ret) == 2080:
+                if full_course_exit:
+                    print('Course ' + i + ': ' + check_msg(ret))
+                    return
+            else:
+                print('Course ' + i + ': Error ' +
+                      check_state(ret) + ': ' + check_msg(ret))
+
         except:
             raise json_exp()
             continue
