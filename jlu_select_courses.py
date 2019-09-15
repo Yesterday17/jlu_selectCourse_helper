@@ -1,64 +1,40 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# author:42binwang
-# 42binwang@gmail.com
-
 import json
 import queue
 from hashlib import md5
 
-# If you use python 2.7, you can use
-# cookielib to replace http.cookiejar
-# besides, urllib2 to replace urllib
-
-import http.cookiejar
-from urllib import request
-from urllib import parse
+import requests
 from threading import Thread
 
-user_id = ''
-pass_plain = ''
+username = ''
+password = ''
+course_id = []  # string[]
 
-# set num_of_worker to define the number of threads
-# Please do not set the num_of_threads too large,
-# it will congest the network, please.
-
-num_of_threads = 5
-
-# If the network has been congested, you can increase the allowed_timeout,
-# ensure that single thread can survive longer.
-
-allowed_timeout = 1
-
-# If the course is full, judge whether to exit the thread.
+# settings
+thread_num = 5
+timeout = 1
 full_course_exit = True
 
-# -----------------------   Attention!!!   -----------------------
-#
-# The course_id is not the one which provided by "教学班".
-# You should get the course_id from the source code of uims page.
-# The valid course_id besides the "选课" button.
-# Support multiple courses, use ',' to seperate them.
-#
-# -----------------------   Attention!!!   -----------------------
+# Disable SSL Errors
+requests.packages.urllib3.disable_warnings()
+requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS += 'HIGH:!DH:!aNULL'
+try:
+    requests.packages.urllib3.contrib.pyopenssl.DEFAULT_SSL_CIPHER_LIST += 'HIGH:!DH:!aNULL'
+except AttributeError:
+    # no pyopenssl support used / needed / available
+    pass
 
-course_id = ['']
+session = requests.Session()
 
-# To make it more stable, wired network is required.
-# 10.60.65.6 - 10.60.65.8 are all available,
-# But usually 10.60.65.8 is unaccessable due to DNS.
+url_prefix = 'https://10.60.65.8/ntms/'
 
-url_prefix = 'http://10.60.65.6/ntms/'
-uims_opener = request.build_opener(
-    request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
-uims_opener.open(url_prefix + 'j_spring_security_check', parse.urlencode(
-    {
-        'j_username': user_id,
-        'j_password': '' + md5(('UIMS'+user_id+pass_plain).encode()).hexdigest(),
-        'mousePath': 'LFAABLAgBnLBwBwKCwB3JEgB/IGQCHIHwCPIKQCYIMwCfIOwCnIRQCvITwC3IVwDAIXwDHIZwDQIbQDXIcwDfIdwDnIegDvIfQD4IfwD/IgwEHIhQEPIhwEXIigEfIjQEoIjwEwIkgE3IlQE/IlwFHImgFPInQFXIoAFgIowFnIpQFvIpwF3IqgF/IqwGHIrwGPIsQGYIswGgItgGnIuAGvIugG4IvAG/IvgHJIvwHQIvwHYIwAHfIwQHyIwgH5IwwIwIxQJAIyAJTIyQJbJywJgJzQJnKzwJwK0QKEK0gKMK0wKSK1AKYK1QKuK1gK1K1wK8K2ALDK2QLJK2gLRK2wLYK2wLvK3AL3K3QMAL3wMHL3wMPL4AMXL4QMfM4wMnM5AOfM5QOnM5wOwC3QNl'
-    }).encode())
-
+session.post(url_prefix + 'j_spring_security_check', data={
+    'j_username': username,
+    'j_password': '' + md5(('UIMS' + username + password).encode()).hexdigest(),
+    'mousePath': 'RGwABRAABaQAwBiQBQBrQCAByQDAB7QEQCCQFQCKQGgCTQHgCaQJQCiQKwCrQMACyQNQC7QOgDDQPwDKQQwDTQRgDaQSQDjRTQDrRTgDySUQD7SUwECSVAELSVwETTWQEaTWgEjTWwEqUXQEzUXgE7VYQFCVYgFSWZAFbWZgFqWZwFzWaAF6WagGDWawGLXbQGSXbgGbXbwGiXcQGrXcwGzXdQG6XeAHDXegHKXfAHTXfwHbXgQHiXgwHrXhQHyXhgH8XiAIDXigIKXjAITXjQIaXjwIjXkQIrXkgIyXlAI7XlgJCXmAJLXmgJTXnAJaXnwJjYoQJqYowJzYpQJ7YpwKCYqgKLYrAKSYrgKbYsAKjYsgKqYtAKzYtQK6YtwLDYuALLYuQLTYugLbYugLiYuwLqZvQLzZvgMCZvgMLZvwMSZwAMbZwQMjZwwMyZxAM6axQNCaxgNLaxwNSbyQNabygNjbywNqczQNyczwOCczwOKc0QOSc0gOac0wOid1QOrd1QO6d1gPCd1wPKe2QPTe2QPie2gPqe2wPyf3AP7f3QQCf3gQLf3wQTg4AQag4QQjg4gQqg4wQyg5AQ7g5QRCg5gRLtzgK/'
+}, verify=False)
 rest_work = queue.Queue()
 result = queue.Queue()
 
@@ -77,8 +53,8 @@ class Worker(Thread):
     def run(self):
         while True:
             try:
-                callable, args, kwargs = rest_work.get(timeout=self.timeout)
-                res = callable(*args, **kwargs)
+                _callable, args, kwargs = rest_work.get(timeout=self.timeout)
+                res = _callable(*args, **kwargs)
                 result.put(res)
             except queue.Empty:
                 break
@@ -86,15 +62,21 @@ class Worker(Thread):
                 print('worker[%d]' % self.id + ' occurred an error')
 
 
+def status(*args, **kwargs):
+    if not result.empty():
+        return result.get(*args, **kwargs)
+    else:
+        return None
+
+
 class Manager:
-    def __init__(self, num_of_threads, timeout):
+    def __init__(self, num_of_threads):
         self.workers = []
-        self.timeout = timeout
         self.recruit(num_of_threads)
 
     def recruit(self, num_of_threads):
         for i in range(num_of_threads):
-            worker = Worker(rest_work, result, self.timeout)
+            worker = Worker(rest_work, result, timeout)
             self.workers.append(worker)
 
     def supervise(self):
@@ -111,12 +93,6 @@ class Manager:
             except:
                 print('Something error, retrying...')
 
-    def status(self, *args, **kwargs):
-        if not result.empty():
-            return result.get(*args, **kwargs)
-        else:
-            return None
-
 
 class json_exp(Exception):
     def __init__(self):
@@ -131,22 +107,8 @@ def add(callable, *args, **kwargs):
 def send_packet(datastr, url):
     headers = dict()
     headers['Content-Type'] = 'application/json'
-    req = request.Request(url, json.dumps(
-        json.loads(datastr)).encode(), headers)
-    ret = uims_opener.open(req)
+    ret = session.post(url, json.dumps(json.loads(datastr)).encode(), headers, verify=False)
     return ret
-
-
-def start():
-    manager = Manager(len(course_id), allowed_timeout)
-    for i in course_id:
-        add(thread, i)
-    manager.supervise()
-    while True:
-        res = manager.status()
-        if res == None:
-            print('Finish!')
-            break
 
 
 def check_state(data):
@@ -169,23 +131,23 @@ def check_msg(data):
         return ret
 
 
-def thread(i):
-    print('Course ' + i + ' is selecting ...')
+def thread(courseID):
+    print('Course ' + courseID + ' is selecting ...')
     while True:
         try:
-            ret = send_packet('{"lsltId":"%s","opType":"Y"}' % (i), url_prefix +
-                              'action/select/select-lesson.do').read().decode()
-            if check_state(ret) == 1410:
-                print('Course ' + i + ' been successfully selected!')
+            ret = send_packet('{"lsltId":"%s","opType":"Y"}' % courseID,
+                              url_prefix + 'action/select/select-lesson.do').text
+            state = check_state(ret)
+            msg = check_msg(ret)
+            if state == 1410:
+                print('课程 ' + courseID + ' 选课成功！')
                 return
-            elif check_state(ret) == 2080:
+            elif state == 2080:
                 if full_course_exit:
-                    print('Course ' + i + ': ' + check_msg(ret))
+                    print('课程 ' + courseID + ': ' + msg)
                     return
             else:
-                print('Course ' + i + ': Error ' +
-                      check_state(ret) + ': ' + check_msg(ret))
-
+                print('课程 %s: 错误 %d: %s' % (courseID, state, msg))
         except:
             raise json_exp()
             continue
@@ -194,8 +156,16 @@ def thread(i):
 if __name__ == "__main__":
     while True:
         try:
-            start()
+            manager = Manager(len(course_id))
+            for i in course_id:
+                add(thread, i)
+            manager.supervise()
+            while True:
+                res = status()
+                if res is None:
+                    print('选课完成！')
+                    break
         except json_exp:
-            print('Something error, retrying...')
+            print('出现错误，重连中…')
             continue
         break
